@@ -72,8 +72,8 @@ jobs:
         if: matrix.name != 'noroot'
         run: |
           cd kernel
-          git config user.name "xposed"
-          git config user.email "xposed@mailchat.me"
+          git config user.name "lua ser ofc"
+          git config user.email "loveirfan363@gmail.com"
           git branch -f temp-${{ matrix.name }} ${{ github.event.inputs.KERNEL_BRANCH }}
           git worktree add ../${{ matrix.name }} temp-${{ matrix.name }}
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
@@ -207,3 +207,4 @@ jobs:
           files: "**/*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
