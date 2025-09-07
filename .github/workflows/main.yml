@@ -167,7 +167,7 @@ jobs:
       ZIP_NAME="XposedHook-GKI-SukiSU+SUSFS-${DATE}.zip"
       OUT_DIR="sukisu"
     else
-      echo "Unknown matrix name: ${ { matrix.name } }"
+      echo "Unknown matrix name: ${{ matrix.name }}"
       exit 1
     fi
 
@@ -191,14 +191,13 @@ jobs:
     elif [ -f "$KBOOT_DIR/Image-dtb" ]; then
       echo "Found Image-dtb -> compressing to Image.gz-dtb"
       gzip -c "$KBOOT_DIR/Image-dtb" > AnyKernel3/Image.gz-dtb
-      # also try to make Image.gz if any Image exists; otherwise AnyKernel may use Image.gz-dtb
     else
       echo "ERROR: No kernel image found in $KBOOT_DIR"
       ls -la "$KBOOT_DIR"
       exit 1
     fi
 
-    # copy DTB/DTBO if present (some AnyKernel configs use dtbo/img)
+    # copy DTB/DTBO if present
     if compgen -G "$KBOOT_DIR/*.dtb" > /dev/null; then
       echo "Copying dtb files"
       cp "$KBOOT_DIR"/*.dtb AnyKernel3/ || true
@@ -222,13 +221,14 @@ jobs:
     zip -r9 "../$ZIP_NAME" ./*
 
     echo "zip_name=$ZIP_NAME" >> $GITHUB_OUTPUT
-      
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.zipkernel.outputs.zip_name }}
-          path: ${{ steps.zipkernel.outputs.zip_name }}
-          
+    
+
+- name: Upload Artifact
+uses: actions/upload-artifact@v4
+  with:
+  name: ${{ steps.zipkernel.outputs.zip_name }}
+    path: ${{ steps.zipkernel.outputs.zip_name }}
+
   finalize:
     needs: [set-date, build]
     runs-on: ubuntu-latest
