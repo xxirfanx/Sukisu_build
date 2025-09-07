@@ -19,7 +19,6 @@ on:
         description: 'Release kernel?'
         type: boolean
         default: false
-
 jobs:
   set-date:
     runs-on: ubuntu-latest
