@@ -165,6 +165,8 @@ jobs:
           retention-days: 1
           path: |
             artifacts/*.txt
+            artifacts/*.zip
+            artifacts/*.img
   finalize:
     needs: [set-date, build]
     runs-on: ubuntu-latest
