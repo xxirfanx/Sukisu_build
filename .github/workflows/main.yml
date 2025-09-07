@@ -1,4 +1,4 @@
-name: SukiSU-TegarXLu_Kernel
+name: SukiSU-Xposed_Kernel
 
 on:
   workflow_dispatch:
