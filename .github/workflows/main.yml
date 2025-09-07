@@ -19,11 +19,12 @@ on:
         description: 'Release kernel?'
         type: boolean
         default: false
+
 jobs:
   set-date:
     runs-on: ubuntu-latest
     outputs:
-      date: ${{ steps.date.outputs.date }}
+      date: ${{ steps.getdate.outputs.date }}
     steps:
       - name: Get Current Date
         id: getdate
@@ -43,6 +44,7 @@ jobs:
           fi
           MATRIX="${MATRIX%,}]"
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+
   build:
     needs: [setup-matrix]
     runs-on: ubuntu-latest
@@ -56,18 +58,20 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y git wget curl build-essential bc bison \
-            flex libssl-dev libncurses-dev libelf-dev ccache python3 unzip
+            flex libssl-dev libncurses-dev libelf-dev ccache python3 unzip zip
+
       - name: Create Swap
         run: |
           sudo fallocate -l 10G /swapfile
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
+
       - name: Clone Kernel Source
         run: |
           git clone --depth=1 ${{ github.event.inputs.KERNEL_REPO }} -b ${{ github.event.inputs.KERNEL_BRANCH }} kernel
       
-      - name: Setup Worktree (for ksunext/sukisu)
+      - name: Setup Worktree (for suksiu)
         if: matrix.name != 'noroot'
         run: |
           cd kernel
@@ -92,6 +96,7 @@ jobs:
           mkdir clang
           wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/d0e0a3882edb1acc193263ae98fce706e82aca38/clang-r574158.tar.gz -O clang.tar.gz
           tar -xf clang.tar.gz -C clang
+
       - name: Verify Clang availability
         run: |
           export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
@@ -117,7 +122,6 @@ jobs:
           export SUBARCH=arm64
           export CLANG_PATH=$GITHUB_WORKSPACE/clang
           export PATH=$CLANG_PATH/bin:$PATH
-          set -x
           set -e
           export CC=clang
           export CXX=clang++
@@ -148,36 +152,46 @@ jobs:
           grep -q "CONFIG_KSU_SUSFS=y" "$CONFIG" && echo "✅ CONFIG_KSU_SUSFS found!" || echo "❌ CONFIG_KSU_SUSFS not found!"
           grep -q "CONFIG_SECURITYFS=y" "$CONFIG" && echo "✅ CONFIG_SECURITYFS found!" || echo "❌ CONFIG_SECURITYFS not found!"
 
-  - name: Package Kernel into ZIP
+      - name: Package Kernel with AnyKernel3
+        id: zipkernel
         run: |
-          mkdir -p artifacts
-
-          # Copy kernel images
-          cp out/arch/arm64/boot/Image artifacts/Image || true
-          cp out/arch/arm64/boot/Image.gz artifacts/Image.gz || true
-          cp out/arch/arm64/boot/Image.gz-dtb artifacts/Image.gz-dtb || true
-          cp out/arch/arm64/boot/dtbo.img artifacts/dtbo.img || true
-
-          # Pack with AnyKernel3
-          cp artifacts/Image* AnyKernel3/ || true
-          cp artifacts/dtbo.img AnyKernel3/ || true
+          set -euo pipefail
+          DATE=$(date +%Y%m%d)
+          if [[ "${{ matrix.name }}" == "noroot" ]]; then
+            ZIP_NAME="XposedHook-GKI-${DATE}.zip"
+            OUT_DIR="kernel"
+          elif [[ "${{ matrix.name }}" == "sukisu" ]]; then
+            ZIP_NAME="XposedHook-GKI-SukiSU+SUSFS-${DATE}.zip"
+            OUT_DIR="sukisu"
+          else
+            echo "Unknown matrix name: ${{ matrix.name }}"
+            exit 1
+          fi
+          KBOOT_DIR="$OUT_DIR/out/arch/arm64/boot"
+          git clone https://github.com/TegarXLu/AnyKernel3
+          if [ -f "$KBOOT_DIR/Image.gz" ]; then
+            cp "$KBOOT_DIR/Image.gz" AnyKernel3/
+          elif [ -f "$KBOOT_DIR/Image.gz-dtb" ]; then
+            cp "$KBOOT_DIR/Image.gz-dtb" AnyKernel3/Image.gz
+          elif [ -f "$KBOOT_DIR/Image" ]; then
+            gzip -c "$KBOOT_DIR/Image" > AnyKernel3/Image.gz
+          elif [ -f "$KBOOT_DIR/Image-dtb" ]; then
+            gzip -c "$KBOOT_DIR/Image-dtb" > AnyKernel3/Image.gz-dtb
+          else
+            echo "ERROR: No kernel image found in $KBOOT_DIR"
+            exit 1
+          fi
+          cp "$KBOOT_DIR"/*.dtb AnyKernel3/ 2>/dev/null || true
+          cp "$KBOOT_DIR"/*.dtbo AnyKernel3/ 2>/dev/null || true
           cd AnyKernel3
-          zip -r9 ../artifacts/kernel-${{ github.run_number }}.zip ./*
-          cd ..
+          zip -r9 "../$ZIP_NAME" ./*
+          echo "zip_name=$ZIP_NAME" >> $GITHUB_OUTPUT
 
-          # Build info
-          echo "Kernel build #${{ github.run_number }} completed on $(date)" > artifacts/build-info.txt
-
-      - name: Upload Artifact (AK3 and Images)
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event.repository.name }}-${{ github.run_number }}
-          retention-days: 1
-          path: |
-            artifacts/*.zip
-            artifacts/*.img
-            artifacts/*.txt
-          if-no-files-found: ignore
+          name: ${{ steps.zipkernel.outputs.zip_name }}
+          path: ${{ steps.zipkernel.outputs.zip_name }}
 
   finalize:
     needs: [set-date, build]
@@ -196,7 +210,9 @@ jobs:
       - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: .
+          path: artifacts
+          merge-multiple: true
+
       - name: Generate Release Notes
         run: |
           echo "🔧 **xposed Hook GKI Release**" > release.txt
@@ -211,14 +227,20 @@ jobs:
           echo "" >> release.txt
           echo "📄 <b>Full changelog</b>: [Here](${{ github.event.inputs.KERNEL_REPO }}/commits/${{ github.event.inputs.KERNEL_BRANCH }})" >> release.txt
           echo "💬 Bug reports: [Support Group](https://t.me/xposedhook)" >> release.txt
-      
+          echo "" >> release.txt
+          if ls artifacts/*.txt 1> /dev/null 2>&1; then
+            echo "📄 **Build Info:**" >> release.txt
+            cat artifacts/*.txt >> release.txt
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: xposedhook-GKI-${{ needs.finalize.outputs.date }}
           name: Xposed Hook GKI - ${{ needs.finalize.outputs.date }}
           body_path: release.txt
-          files: "**/*.zip"
+          files: |
+            artifacts/*.zip
+            artifacts/*.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
