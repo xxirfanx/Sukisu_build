@@ -149,85 +149,36 @@ jobs:
           grep -q "CONFIG_KSU_SUSFS=y" "$CONFIG" && echo "✅ CONFIG_KSU_SUSFS found!" || echo "❌ CONFIG_KSU_SUSFS not found!"
           grep -q "CONFIG_SECURITYFS=y" "$CONFIG" && echo "✅ CONFIG_SECURITYFS found!" || echo "❌ CONFIG_SECURITYFS not found!"
 
-          - name: Package Kernel with AnyKernel3
-  id: zipkernel
-  run: |
-    set -euo pipefail
+  - name: Package Kernel into ZIP
+        run: |
+          mkdir -p artifacts
 
-    DATE=$(date +%Y%m%d)
-    echo "DATE=$DATE" >> $GITHUB_ENV
+          # Copy kernel images
+          cp out/arch/arm64/boot/Image artifacts/Image || true
+          cp out/arch/arm64/boot/Image.gz artifacts/Image.gz || true
+          cp out/arch/arm64/boot/Image.gz-dtb artifacts/Image.gz-dtb || true
+          cp out/arch/arm64/boot/dtbo.img artifacts/dtbo.img || true
 
-    if [[ "${{ matrix.name }}" == "noroot" ]]; then
-      ZIP_NAME="XposedHook-GKI-${DATE}.zip"
-      OUT_DIR="kernel"
-    elif [[ "${{ matrix.name }}" == "ksunext" ]]; then
-      ZIP_NAME="XposedHook-GKI-KSUNext+SUSFS-${DATE}.zip"
-      OUT_DIR="ksunext"
-    elif [[ "${{ matrix.name }}" == "sukisu" ]]; then
-      ZIP_NAME="XposedHook-GKI-SukiSU+SUSFS-${DATE}.zip"
-      OUT_DIR="sukisu"
-    else
-      echo "Unknown matrix name: ${{ matrix.name }}"
-      exit 1
-    fi
+          # Pack with AnyKernel3
+          cp artifacts/Image* AnyKernel3/ || true
+          cp artifacts/dtbo.img AnyKernel3/ || true
+          cd AnyKernel3
+          zip -r9 ../artifacts/kernel-${{ github.run_number }}.zip ./*
+          cd ..
 
-    # paths
-    KBOOT_DIR="$OUT_DIR/out/arch/arm64/boot"
-    echo "Looking for kernel images in: $KBOOT_DIR"
-    ls -la "$KBOOT_DIR" || true
+          # Build info
+          echo "Kernel build #${{ github.run_number }} completed on $(date)" > artifacts/build-info.txt
 
-    git clone https://github.com/TegarXLu/AnyKernel3
-
-    # prefer Image.gz, then Image.gz-dtb, then Image (compress), then Image-dtb
-    if [ -f "$KBOOT_DIR/Image.gz" ]; then
-      echo "Found Image.gz"
-      cp "$KBOOT_DIR/Image.gz" AnyKernel3/
-    elif [ -f "$KBOOT_DIR/Image.gz-dtb" ]; then
-      echo "Found Image.gz-dtb -> copying as Image.gz"
-      cp "$KBOOT_DIR/Image.gz-dtb" AnyKernel3/Image.gz
-    elif [ -f "$KBOOT_DIR/Image" ]; then
-      echo "Found Image (uncompressed) -> compressing to Image.gz"
-      gzip -c "$KBOOT_DIR/Image" > AnyKernel3/Image.gz
-    elif [ -f "$KBOOT_DIR/Image-dtb" ]; then
-      echo "Found Image-dtb -> compressing to Image.gz-dtb"
-      gzip -c "$KBOOT_DIR/Image-dtb" > AnyKernel3/Image.gz-dtb
-    else
-      echo "ERROR: No kernel image found in $KBOOT_DIR"
-      ls -la "$KBOOT_DIR"
-      exit 1
-    fi
-
-    # copy DTB/DTBO if present
-    if compgen -G "$KBOOT_DIR/*.dtb" > /dev/null; then
-      echo "Copying dtb files"
-      cp "$KBOOT_DIR"/*.dtb AnyKernel3/ || true
-    fi
-    if compgen -G "$KBOOT_DIR/*.dtbo" > /dev/null; then
-      echo "Copying dtbo files"
-      cp "$KBOOT_DIR"/*.dtbo AnyKernel3/ || true
-    fi
-
-    # optional: copy dtb tree if exists
-    if [ -d "$KBOOT_DIR/dts" ]; then
-      echo "Copying dts tree"
-      cp -r "$KBOOT_DIR/dts" AnyKernel3/ || true
-    fi
-
-    # show AnyKernel3 contents for debugging
-    echo "AnyKernel3 content before zip:"
-    ls -la AnyKernel3 || true
-
-    cd AnyKernel3
-    zip -r9 "../$ZIP_NAME" ./*
-
-    echo "zip_name=$ZIP_NAME" >> $GITHUB_OUTPUT
-    
-
-- name: Upload Artifact
-uses: actions/upload-artifact@v4
-  with:
-  name: ${{ steps.zipkernel.outputs.zip_name }}
-    path: ${{ steps.zipkernel.outputs.zip_name }}
+      - name: Upload Artifact (AK3 and Images)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-${{ github.run_number }}
+          retention-days: 1
+          path: |
+            artifacts/*.zip
+            artifacts/*.img
+            artifacts/*.txt
+          if-no-files-found: ignore
 
   finalize:
     needs: [set-date, build]
