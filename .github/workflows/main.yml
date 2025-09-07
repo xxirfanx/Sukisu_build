@@ -24,7 +24,7 @@ jobs:
   set-date:
     runs-on: ubuntu-latest
     outputs:
-      date: ${{ steps.getdate.outputs.date }}
+      date: ${{ steps.date.outputs.date }}
     steps:
       - name: Get Current Date
         id: getdate
