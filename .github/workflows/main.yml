@@ -167,7 +167,7 @@ jobs:
             echo "Unknown matrix name: ${{ matrix.name }}"
             exit 1
           fi
-          KBOOT_DIR="$OUT_DIR/out/arch/arm64/boot"
+          KBOOT_DIR="home/runner/work/Sukisu_build/Sukisu_build/kernel/out"
           git clone https://github.com/TegarXLu/AnyKernel3
           if [ -f "$KBOOT_DIR/Image.gz" ]; then
             cp "$KBOOT_DIR/Image.gz" AnyKernel3/
